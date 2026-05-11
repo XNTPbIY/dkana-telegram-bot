@@ -7,7 +7,7 @@ import hashlib
 BOT_TOKEN = "8703098869:AAGANurvwhEfO8gAFr0Q5l6Dbpi2Q-YdsDo"
 DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"
 DKANA_API_URL = "https://udkana.ru/api/v1"
-CHANNEL_ID = "@ваш_канал"  # ID канала
+CHANNEL_ID = "@udekana"  # ID канала
 # ====================
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
