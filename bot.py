@@ -165,7 +165,10 @@ def create_list_keyboard(feed, page, per_page=5):
         recipe = item.get("recipe", {})
         name = recipe.get("name", "Без названия")[:30]
         actual_num = start + i + 1
-        keyboard.append([{"text": f"{actual_num}. {name}", "callback_data": f"item_{item['id']}"}])
+        recipe_id = recipe.get("id")
+        if not recipe_id:
+            continue
+        keyboard.append([{"text": f"{actual_num}. {name}", "callback_data": f"item_{recipe_id}"}])
     
     nav_row = []
     if page > 1:
@@ -243,17 +246,37 @@ if __name__ == "__main__":
                             page = int(data.split("_")[1])
                             if feed_cache:
                                 send_message(chat_id, f"📖 <b>Лента рецептов</b> — страница {page} (всего {len(feed_cache)})", create_list_keyboard(feed_cache, page))
-                        elif data.startswith("item_"):
-                            item_id = data.split("_")[1]
-                            for item in feed_cache:
-                                if item.get("id") == item_id:
-                                    text, site_url = format_full_recipe(item)
-                                    keyboard = create_recipe_keyboard(site_url)
-                                    photo = get_photo_url(item)
-                                    if photo:
-                                        send_photo(chat_id, photo, text, keyboard)
-                                    else:
-                                        send_message(chat_id, text, keyboard)
+elif data.startswith("item_"):
+    recipe_id = data.split("_")[1]
+    url = f"{DKANA_API_URL}/recipes/{recipe_id}?api_key={DKANA_API_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            resp_data = r.json()
+            if resp_data.get("success") and resp_data.get("recipe"):
+                recipe = resp_data["recipe"]
+                text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n\n"
+                
+                ings = recipe.get("ingredients", [])
+                if ings:
+                    text += "<b>🛒 Ингредиенты:</b>\n"
+                    for ing in ings:
+                        text += f"• {ing['name']}: {ing['amount']} {ing['unit']}\n"
+                    text += "\n"
+                
+                desc = recipe.get("description", "")
+                if desc:
+                    text += f"<b>📖 Приготовление:</b>\n{desc}\n\n"
+                
+                site_url = f"https://udkana.ru/?import={recipe_id}"
+                keyboard = create_recipe_keyboard(site_url)
+                send_message(chat_id, text, keyboard)
+            else:
+                send_message(chat_id, "❌ Рецепт не найден")
+        else:
+            send_message(chat_id, "❌ Ошибка API")
+    except Exception as e:
+        send_message(chat_id, f"❌ Ошибка: {e}")
                                     break
                         elif data.startswith("page_"):
                             page = int(data.split("_")[1])
