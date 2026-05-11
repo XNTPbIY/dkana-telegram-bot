@@ -1,11 +1,14 @@
-import os
 import requests
 import time
 import random
-# ===== НАСТРОЙКИ (ВПИШИ СВОИ ЗНАЧЕНИЯ) =====
+
+# ===== НАСТРОЙКИ (ВПИСАНО ВРУЧНУЮ) =====
 BOT_TOKEN = "8703098869:AAGANurvwhEfO8gAFr0Q5l6Dbpi2Q-YdsDo"
-DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"  # Например: a1b2c3d4e5f6g7h8i9j0...
+DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"  # ЗАМЕНИ НА РЕАЛЬНЫЙ
 DKANA_API_URL = "https://udkana.ru/api/v1"
+# ========================================
+
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # =========================================
 # ===== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
