@@ -1,11 +1,10 @@
-import os
 import requests
 import time
 import random
 
-# Переменные окружения (задайте их в настройках бота)
+# ===== НАСТРОЙКИ =====
 BOT_TOKEN = "8703098869:AAGANurvwhEfO8gAFr0Q5l6Dbpi2Q-YdsDo"
-DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"  # замените на реальный ключ
+DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"  # ЗАМЕНИТЕ
 DKANA_API_URL = "https://udkana.ru/api/v1"
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -50,36 +49,38 @@ def format_recipe(recipe):
     return text
 
 print("🚀 Бот запущен!")
-while True:
-    try:
-        url = f"{BASE_URL}/getUpdates?offset={last_update_id + 1}&timeout=30"
-        response = requests.get(url, timeout=35)
+
+if __name__ == "__main__":
+    while True:
+        try:
+            url = f"{BASE_URL}/getUpdates?offset={last_update_id + 1}&timeout=30"
+            response = requests.get(url, timeout=35)
+            
+            if response.status_code == 200:
+                updates = response.json().get("result", [])
+                for update in updates:
+                    last_update_id = update["update_id"]
+                    chat_id = update["message"]["chat"]["id"]
+                    text = update["message"].get("text", "")
+                    
+                    if text == "/start":
+                        send_message(chat_id, "🍳 Привет! Я бот DKana.\n\n/recipes - рецепты\n/random - случайный рецепт")
+                    elif text == "/recipes":
+                        recipes = get_recipes()
+                        if recipes:
+                            msg = "📖 Рецепты:\n\n"
+                            for i, r in enumerate(recipes[:15]):
+                                msg += f"{i+1}. {r['name']}\n"
+                            send_message(chat_id, msg)
+                        else:
+                            send_message(chat_id, "📭 Нет рецептов")
+                    elif text == "/random":
+                        recipe = get_random_recipe()
+                        if recipe:
+                            send_message(chat_id, format_recipe(recipe))
+                        else:
+                            send_message(chat_id, "❌ Не удалось найти рецепты")
+        except Exception as e:
+            print(f"Ошибка: {e}")
         
-        if response.status_code == 200:
-            updates = response.json().get("result", [])
-            for update in updates:
-                last_update_id = update["update_id"]
-                chat_id = update["message"]["chat"]["id"]
-                text = update["message"].get("text", "")
-                
-                if text == "/start":
-                    send_message(chat_id, "🍳 Привет! Я бот DKana.\n\n/recipes - список рецептов\n/random - случайный рецепт")
-                elif text == "/recipes":
-                    recipes = get_recipes()
-                    if recipes:
-                        msg = "📖 Рецепты:\n\n"
-                        for i, r in enumerate(recipes[:15]):
-                            msg += f"{i+1}. {r['name']}\n"
-                        send_message(chat_id, msg)
-                    else:
-                        send_message(chat_id, "📭 Нет рецептов")
-                elif text == "/random":
-                    recipe = get_random_recipe()
-                    if recipe:
-                        send_message(chat_id, format_recipe(recipe))
-                    else:
-                        send_message(chat_id, "❌ Не удалось найти рецепты")
-    except Exception as e:
-        print(f"Ошибка: {e}")
-    
-    time.sleep(1)
+        time.sleep(1)
