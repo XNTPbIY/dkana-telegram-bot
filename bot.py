@@ -69,7 +69,8 @@ def format_full_recipe(item):
     """Форматирует ПОЛНЫЙ рецепт с описанием и кнопкой"""
     recipe = item.get("recipe", {})
     author = item.get("author_nickname", item.get("author_email", "Пользователь"))
-    share_id = item.get("share_id", "")
+    # ВОТ ГЛАВНОЕ ИЗМЕНЕНИЕ: используем id рецепта вместо share_id
+    recipe_id = item.get("id", "")
     
     # Полный текст рецепта
     text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n"
@@ -99,7 +100,7 @@ def format_full_recipe(item):
         text += f"<b>📌 Заметки:</b>\n{notes}\n\n"
     
     # Кнопка для просмотра на сайте
-    site_url = f"https://udkana.ru/?import={share_id}" if share_id else "https://udkana.ru/"
+    site_url = f"https://udkana.ru/?import={recipe_id}" if recipe_id else "https://udkana.ru/"
     
     return text, site_url
 
@@ -114,13 +115,12 @@ def create_recipe_keyboard(site_url):
     return keyboard
 
 def send_to_channel(item):
-    """Отправляет новый рецепт в канал"""
     recipe = item.get("recipe", {})
     author = item.get("author_nickname", item.get("author_email", "Пользователь"))
-    share_id = item.get("share_id", "")
+    recipe_id = item.get("id", "")  # Берём id из ленты
     photo = get_photo_url(item)
     
-    site_url = f"https://udkana.ru/?import={share_id}" if share_id else "https://udkana.ru/"
+    site_url = f"https://udkana.ru/?import={recipe_id}" if recipe_id else "https://udkana.ru/"
     
     caption = f"🍲 <b>НОВЫЙ РЕЦЕПТ В ЛЕНТЕ!</b>\n\n"
     caption += f"🍳 <b>{recipe.get('name', 'Без названия')}</b>\n"
