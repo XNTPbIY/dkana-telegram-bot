@@ -2,12 +2,13 @@ import requests
 import time
 import random
 import hashlib
+import json
 
 # ===== НАСТРОЙКИ =====
 BOT_TOKEN = "8703098869:AAGANurvwhEfO8gAFr0Q5l6Dbpi2Q-YdsDo"
 DKANA_API_KEY = "5c6275a18b4bc810e9f2d70db41c4f51"
 DKANA_API_URL = "https://udkana.ru/api/v1"
-CHANNEL_ID = "@udekana"  # ID канала
+CHANNEL_ID = "@udekana"
 # ====================
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -36,7 +37,6 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
         send_message(chat_id, caption, reply_markup)
 
 def get_feed(limit=50):
-    """Получает рецепты из Общей ленты"""
     url = f"{DKANA_API_URL}/feed?limit={limit}&api_key={DKANA_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
@@ -44,8 +44,41 @@ def get_feed(limit=50):
             data = r.json()
             return data.get("feed", [])
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка get_feed: {e}")
     return []
+
+def get_recipe_by_id(recipe_id):
+    """Получает рецепт через API ленты"""
+    feed = get_feed(200)
+    for item in feed:
+        if item.get("id") == recipe_id:
+            return item
+    return None
+
+def create_magic_link(recipe):
+    """Создаёт магическую ссылку через shareRecipe API"""
+    url = "https://udkana.ru/api.php?action=shareRecipe"
+    
+    clean_recipe = {
+        "id": recipe.get("id"),
+        "name": recipe.get("name"),
+        "type": recipe.get("type", "Другое"),
+        "tags": recipe.get("tags", []),
+        "ingredients": recipe.get("ingredients", []),
+        "description": recipe.get("description", ""),
+        "notes": recipe.get("notes", ""),
+        "photos": recipe.get("photos", [])
+    }
+    
+    try:
+        r = requests.post(url, json={"recipe": clean_recipe}, timeout=10, headers={"Content-Type": "application/json"})
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("success"):
+                return data.get("id")
+    except Exception as e:
+        print(f"Ошибка create_magic_link: {e}")
+    return None
 
 def get_random_from_feed():
     feed = get_feed(50)
@@ -54,7 +87,6 @@ def get_random_from_feed():
     return None
 
 def get_photo_url(item):
-    """Получает первую фотографию"""
     photo_urls = item.get("photo_urls", [])
     if photo_urls:
         return photo_urls[0]
@@ -66,20 +98,24 @@ def get_photo_url(item):
     return None
 
 def format_full_recipe(item):
-    """Форматирует ПОЛНЫЙ рецепт с описанием и кнопкой"""
     recipe = item.get("recipe", {})
     author = item.get("author_nickname", item.get("author_email", "Пользователь"))
-    # ВОТ ГЛАВНОЕ ИЗМЕНЕНИЕ: используем id рецепта вместо share_id
+    
+    # Получаем ID рецепта
     recipe_id = item.get("id", "")
     
-    # Полный текст рецепта
+    # Создаём магическую ссылку
+    share_id = create_magic_link(recipe)
+    if share_id:
+        site_url = f"https://udkana.ru/?import={share_id}"
+    else:
+        site_url = "https://udkana.ru/"
+    
     text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n"
     text += f"👤 <i>Автор: {author}</i>\n"
     text += f"❤️ Лайков: {item.get('likes', 0)}\n\n"
-    
     text += f"📌 <b>Тип:</b> {recipe.get('type', 'Не указан')}\n\n"
     
-    # Все ингредиенты
     ingredients = recipe.get("ingredients", [])
     if ingredients:
         text += "<b>🛒 Ингредиенты:</b>\n"
@@ -87,25 +123,17 @@ def format_full_recipe(item):
             text += f"• {ing['name']}: {ing['amount']} {ing['unit']}\n"
         text += "\n"
     
-    # Полное описание (шаги)
     description = recipe.get("description", "")
     if description:
-        text += "<b>📖 Приготовление:</b>\n"
-        text += description
-        text += "\n\n"
+        text += f"<b>📖 Приготовление:</b>\n{description}\n\n"
     
-    # Заметки
     notes = recipe.get("notes", "")
     if notes:
         text += f"<b>📌 Заметки:</b>\n{notes}\n\n"
     
-    # Кнопка для просмотра на сайте
-    site_url = f"https://udkana.ru/?import={recipe_id}" if recipe_id else "https://udkana.ru/"
-    
     return text, site_url
 
 def create_recipe_keyboard(site_url):
-    """Клавиатура с кнопкой для открытия рецепта"""
     keyboard = {
         "inline_keyboard": [
             [{"text": "🔗 Открыть рецепт на сайте", "url": site_url}],
@@ -117,10 +145,11 @@ def create_recipe_keyboard(site_url):
 def send_to_channel(item):
     recipe = item.get("recipe", {})
     author = item.get("author_nickname", item.get("author_email", "Пользователь"))
-    recipe_id = item.get("id", "")  # Берём id из ленты
     photo = get_photo_url(item)
     
-    site_url = f"https://udkana.ru/?import={recipe_id}" if recipe_id else "https://udkana.ru/"
+    # Создаём магическую ссылку
+    share_id = create_magic_link(recipe)
+    site_url = f"https://udkana.ru/?import={share_id}" if share_id else "https://udkana.ru/"
     
     caption = f"🍲 <b>НОВЫЙ РЕЦЕПТ В ЛЕНТЕ!</b>\n\n"
     caption += f"🍳 <b>{recipe.get('name', 'Без названия')}</b>\n"
@@ -165,7 +194,7 @@ def create_list_keyboard(feed, page, per_page=5):
         recipe = item.get("recipe", {})
         name = recipe.get("name", "Без названия")[:30]
         actual_num = start + i + 1
-        recipe_id = recipe.get("id")
+        recipe_id = item.get("id", "")
         if not recipe_id:
             continue
         keyboard.append([{"text": f"{actual_num}. {name}", "callback_data": f"item_{recipe_id}"}])
@@ -191,6 +220,21 @@ def create_menu_keyboard():
         ]
     }
     return keyboard
+
+def show_recipe(chat_id, recipe_id):
+    item = get_recipe_by_id(recipe_id)
+    if not item:
+        send_message(chat_id, "❌ Рецепт не найден", create_menu_keyboard())
+        return
+    
+    text, site_url = format_full_recipe(item)
+    keyboard = create_recipe_keyboard(site_url)
+    photo = get_photo_url(item)
+    
+    if photo:
+        send_photo(chat_id, photo, text, keyboard)
+    else:
+        send_message(chat_id, text, keyboard)
 
 print("🚀 Бот запущен!")
 
@@ -246,38 +290,9 @@ if __name__ == "__main__":
                             page = int(data.split("_")[1])
                             if feed_cache:
                                 send_message(chat_id, f"📖 <b>Лента рецептов</b> — страница {page} (всего {len(feed_cache)})", create_list_keyboard(feed_cache, page))
-elif data.startswith("item_"):
-    recipe_id = data.split("_")[1]
-    url = f"{DKANA_API_URL}/recipes/{recipe_id}?api_key={DKANA_API_KEY}"
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            resp_data = r.json()
-            if resp_data.get("success") and resp_data.get("recipe"):
-                recipe = resp_data["recipe"]
-                text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n\n"
-                
-                ings = recipe.get("ingredients", [])
-                if ings:
-                    text += "<b>🛒 Ингредиенты:</b>\n"
-                    for ing in ings:
-                        text += f"• {ing['name']}: {ing['amount']} {ing['unit']}\n"
-                    text += "\n"
-                
-                desc = recipe.get("description", "")
-                if desc:
-                    text += f"<b>📖 Приготовление:</b>\n{desc}\n\n"
-                
-                site_url = f"https://udkana.ru/?import={recipe_id}"
-                keyboard = create_recipe_keyboard(site_url)
-                send_message(chat_id, text, keyboard)
-            else:
-                send_message(chat_id, "❌ Рецепт не найден")
-        else:
-            send_message(chat_id, "❌ Ошибка API")
-    except Exception as e:
-        send_message(chat_id, f"❌ Ошибка: {e}")
-                                    break
+                        elif data.startswith("item_"):
+                            recipe_id = data.split("_")[1]
+                            show_recipe(chat_id, recipe_id)
                         elif data.startswith("page_"):
                             page = int(data.split("_")[1])
                             if feed_cache:
