@@ -11,6 +11,9 @@ DKANA_API_URL = "https://udkana.ru/api/v1"
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 last_update_id = 0
+feed_cache = []
+current_page = 1
+ITEMS_PER_PAGE = 5
 
 def send_message(chat_id, text, reply_markup=None):
     url = f"{BASE_URL}/sendMessage"
@@ -22,19 +25,18 @@ def send_message(chat_id, text, reply_markup=None):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-def get_feed(limit=50):
+def get_feed(limit=100):
     url = f"{DKANA_API_URL}/feed?limit={limit}&api_key={DKANA_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             return r.json().get("feed", [])
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка get_feed: {e}")
     return []
 
 def get_recipe_by_id(recipe_id):
-    feed = get_feed(100)
-    for item in feed:
+    for item in feed_cache:
         if item.get("id") == recipe_id:
             return item
     return None
@@ -48,10 +50,10 @@ def show_recipe(chat_id, recipe_id):
     recipe = item.get("recipe", {})
     author = item.get("author_nickname", item.get("author_email", "Пользователь"))
     
-    text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n"
+    text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n\n"
     text += f"👤 Автор: {author}\n"
-    text += f"❤️ Лайков: {item.get('likes', 0)}\n"
-    text += f"📌 Тип: {recipe.get('type', 'Не указан')}\n\n"
+    text += f"❤️ Лайков: {item.get('likes', 0)}\n\n"
+    text += f"📌 <b>Тип:</b> {recipe.get('type', 'Не указан')}\n\n"
     
     ings = recipe.get("ingredients", [])
     if ings:
@@ -60,24 +62,71 @@ def show_recipe(chat_id, recipe_id):
             text += f"• {ing['name']}: {ing['amount']} {ing['unit']}\n"
         if len(ings) > 8:
             text += "...\n"
+        text += "\n"
     
     desc = recipe.get("description", "")
     if desc:
-        text += f"\n<b>📖 Приготовление:</b>\n{desc[:300]}"
-        if len(desc) > 300:
+        text += f"<b>📖 Приготовление:</b>\n{desc[:500]}"
+        if len(desc) > 500:
             text += "..."
     
     keyboard = {
         "inline_keyboard": [
+            [{"text": "◀ Назад в ленту", "callback_data": f"page_{current_page}"}],
             [{"text": "🏠 Главное меню", "callback_data": "menu"}]
         ]
     }
     send_message(chat_id, text, keyboard)
 
+def refresh_feed_cache():
+    global feed_cache
+    feed_cache = get_feed(100)
+    return feed_cache
+
+def show_feed_page(chat_id, page):
+    global feed_cache, current_page
+    if not feed_cache:
+        feed_cache = refresh_feed_cache()
+    
+    if not feed_cache:
+        send_message(chat_id, "📭 Лента пока пуста")
+        return
+    
+    total_items = len(feed_cache)
+    total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+    
+    current_page = page
+    start = (page - 1) * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    page_items = feed_cache[start:end]
+    
+    keyboard = {"inline_keyboard": []}
+    
+    for i, item in enumerate(page_items):
+        name = item.get("recipe", {}).get("name", "Без названия")[:35]
+        keyboard["inline_keyboard"].append([{"text": f"{start + i + 1}. {name}", "callback_data": f"item_{item.get('id')}"}])
+    
+    nav_row = []
+    if page > 1:
+        nav_row.append({"text": "◀ Назад", "callback_data": f"page_{page - 1}"})
+    if page < total_pages:
+        nav_row.append({"text": "Вперед ▶", "callback_data": f"page_{page + 1}"})
+    if nav_row:
+        keyboard["inline_keyboard"].append(nav_row)
+    
+    keyboard["inline_keyboard"].append([{"text": "🏠 Главное меню", "callback_data": "menu"}])
+    
+    send_message(chat_id, f"📖 <b>Лента рецептов</b> — стр. {page} из {total_pages} (всего {total_items})", keyboard)
+
 print("🚀 Бот запущен!")
 
 if __name__ == "__main__":
-    feed_cache = []
+    last_update_id = 0
     
     while True:
         try:
@@ -99,29 +148,25 @@ if __name__ == "__main__":
                         if data == "menu":
                             kb = {
                                 "inline_keyboard": [
-                                    [{"text": "📖 Лента", "callback_data": "list_1"}],
-                                    [{"text": "🎲 Случайный", "callback_data": "random"}]
+                                    [{"text": "📖 Лента", "callback_data": "list"}],
+                                    [{"text": "🎲 Случайный рецепт", "callback_data": "random"}]
                                 ]
                             }
-                            send_message(chat_id, "🍳 Главное меню", kb)
+                            send_message(chat_id, "🍳 <b>Главное меню</b>", kb)
+                        elif data == "list":
+                            feed_cache = refresh_feed_cache()
+                            show_feed_page(chat_id, 1)
                         elif data == "random":
-                            feed = get_feed(50)
-                            if feed:
-                                item = random.choice(feed)
+                            if not feed_cache:
+                                feed_cache = refresh_feed_cache()
+                            if feed_cache:
+                                item = random.choice(feed_cache)
                                 show_recipe(chat_id, item.get("id"))
                             else:
                                 send_message(chat_id, "📭 Лента пуста")
-                        elif data.startswith("list_"):
-                            feed_cache = get_feed(50)
-                            if feed_cache:
-                                kb = {"inline_keyboard": []}
-                                for i, it in enumerate(feed_cache[:10]):
-                                    name = it.get("recipe", {}).get("name", "Без названия")[:25]
-                                    kb["inline_keyboard"].append([{"text": f"{i+1}. {name}", "callback_data": f"item_{it.get('id')}"}])
-                                kb["inline_keyboard"].append([{"text": "🏠 Главное меню", "callback_data": "menu"}])
-                                send_message(chat_id, f"📖 Лента ({len(feed_cache)} рец.)", kb)
-                            else:
-                                send_message(chat_id, "📭 Лента пуста")
+                        elif data.startswith("page_"):
+                            page = int(data.split("_")[1])
+                            show_feed_page(chat_id, page)
                         elif data.startswith("item_"):
                             rid = data.split("_")[1]
                             show_recipe(chat_id, rid)
@@ -134,35 +179,27 @@ if __name__ == "__main__":
                         if chat_type == "channel":
                             continue
                         
-                        kb = {
-                            "inline_keyboard": [
-                                [{"text": "📖 Лента", "callback_data": "list_1"}],
-                                [{"text": "🎲 Случайный", "callback_data": "random"}]
-                            ]
-                        }
-                        
                         if text == "/start":
-                            send_message(chat_id, "🍳 Добро пожаловать в DKana бот!", kb)
+                            kb = {
+                                "inline_keyboard": [
+                                    [{"text": "📖 Лента", "callback_data": "list"}],
+                                    [{"text": "🎲 Случайный рецепт", "callback_data": "random"}]
+                                ]
+                            }
+                            send_message(chat_id, "🍳 <b>Добро пожаловать в DKana бот!</b>", kb)
                         elif text == "/feed":
-                            feed_cache = get_feed(50)
-                            if feed_cache:
-                                kb2 = {"inline_keyboard": []}
-                                for i, it in enumerate(feed_cache[:10]):
-                                    name = it.get("recipe", {}).get("name", "Без названия")[:25]
-                                    kb2["inline_keyboard"].append([{"text": f"{i+1}. {name}", "callback_data": f"item_{it.get('id')}"}])
-                                kb2["inline_keyboard"].append([{"text": "🏠 Главное меню", "callback_data": "menu"}])
-                                send_message(chat_id, f"📖 Лента ({len(feed_cache)} рец.)", kb2)
-                            else:
-                                send_message(chat_id, "📭 Лента пуста", kb)
+                            feed_cache = refresh_feed_cache()
+                            show_feed_page(chat_id, 1)
                         elif text == "/random":
-                            feed = get_feed(50)
-                            if feed:
-                                item = random.choice(feed)
+                            if not feed_cache:
+                                feed_cache = refresh_feed_cache()
+                            if feed_cache:
+                                item = random.choice(feed_cache)
                                 show_recipe(chat_id, item.get("id"))
                             else:
-                                send_message(chat_id, "📭 Лента пуста", kb)
+                                send_message(chat_id, "📭 Лента пуста")
                         elif text == "/help":
-                            send_message(chat_id, "🍳 Команды:\n/start - меню\n/feed - лента\n/random - случайный рецепт", kb)
+                            send_message(chat_id, "🍳 <b>Команды</b>\n\n/start - Главное меню\n/feed - Лента рецептов\n/random - Случайный рецепт")
             
         except Exception as e:
             print(f"Ошибка: {e}")
