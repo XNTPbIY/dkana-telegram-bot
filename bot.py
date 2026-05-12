@@ -70,19 +70,6 @@ def create_magic_link(recipe):
         print(f"Ошибка create_magic_link: {e}")
     return None
 
-def get_recipe_by_id(recipe_id):
-    feed = get_feed(200)
-    for item in feed:
-        if item.get("id") == recipe_id:
-            return item
-    return None
-
-def get_random_from_feed():
-    feed = get_feed(50)
-    if feed:
-        return random.choice(feed)
-    return None
-
 def get_photo_url(item):
     photo_urls = item.get("photo_urls", [])
     if photo_urls:
@@ -204,12 +191,59 @@ def create_menu_keyboard():
     }
 
 def show_recipe(chat_id, recipe_id):
-    item = get_recipe_by_id(recipe_id)
+    # Поиск рецепта в кэше
+    item = None
+    for cached in feed_cache:
+        if cached.get("id") == recipe_id:
+            item = cached
+            break
+    
     if not item:
-        send_message(chat_id, "❌ Рецепт не найден", create_menu_keyboard())
+        fresh_feed = get_feed(200)
+        for i in fresh_feed:
+            if i.get("id") == recipe_id:
+                item = i
+                break
+    
+    if not item:
+        send_message(chat_id, "❌ Рецепт не найден в ленте", create_menu_keyboard())
         return
-    text, site_url = format_full_recipe(item, create_new_link=False)
-    keyboard = create_recipe_keyboard(site_url)
+    
+    recipe = item.get("recipe", {})
+    if not recipe:
+        send_message(chat_id, "❌ Ошибка: данные рецепта отсутствуют", create_menu_keyboard())
+        return
+    
+    # Формируем текст
+    text = f"🍲 <b>{recipe.get('name', 'Без названия')}</b>\n\n"
+    text += f"👤 Автор: {item.get('author_nickname', item.get('author_email', 'Пользователь'))}\n"
+    text += f"❤️ Лайков: {item.get('likes', 0)}\n\n"
+    text += f"📌 <b>Тип:</b> {recipe.get('type', 'Не указан')}\n\n"
+    
+    ingredients = recipe.get("ingredients", [])
+    if ingredients:
+        text += "<b>🛒 Ингредиенты:</b>\n"
+        for ing in ingredients:
+            text += f"• {ing['name']}: {ing['amount']} {ing['unit']}\n"
+        text += "\n"
+    
+    description = recipe.get("description", "")
+    if description:
+        text += f"<b>📖 Приготовление:</b>\n{description}\n\n"
+    
+    # Ссылка
+    share_id = item.get("share_id")
+    if not share_id:
+        share_id = create_magic_link(recipe)
+    site_url = f"https://udkana.ru/?import={share_id}" if share_id else "https://udkana.ru/"
+    
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "🔗 Открыть на сайте", "url": site_url}],
+            [{"text": "🏠 Главное меню", "callback_data": "menu"}]
+        ]
+    }
+    
     photo = get_photo_url(item)
     if photo:
         send_photo(chat_id, photo, text, keyboard)
@@ -253,12 +287,12 @@ if __name__ == "__main__":
                         if data == "menu":
                             send_message(chat_id, "🍳 <b>Главное меню</b>", create_menu_keyboard())
                         elif data == "help":
-                            send_message(chat_id, "🍳 <b>Помощь</b>\n\n/start - Главное меню\n/feed - Лента рецептов\n/random - Случайный рецепт", create_menu_keyboard())
+                            send_message(chat_id, "🍳 <b>Помощь</b>\n\n/start - Главное меню\n/feed - Лента\n/random - Случайный рецепт", create_menu_keyboard())
                         elif data == "random":
                             item = get_random_from_feed()
                             if item:
-                                text, site_url = format_full_recipe(item, create_new_link=False)
-                                keyboard = create_recipe_keyboard(site_url)
+                                text, url = format_full_recipe(item, create_new_link=False)
+                                keyboard = create_recipe_keyboard(url)
                                 photo = get_photo_url(item)
                                 if photo:
                                     send_photo(chat_id, photo, text, keyboard)
@@ -284,7 +318,7 @@ if __name__ == "__main__":
                         text = message.get("text", "")
                         chat_type = message.get("chat", {}).get("type", "")
                         
-                        # Игнорируем только каналы (в группах и личке работаем)
+                        # Игнорируем только каналы
                         if chat_type == "channel":
                             continue
                         
@@ -300,19 +334,18 @@ if __name__ == "__main__":
                         elif text == "/random":
                             item = get_random_from_feed()
                             if item:
-                                text, site_url = format_full_recipe(item, create_new_link=False)
-                                keyboard = create_recipe_keyboard(site_url)
+                                txt, url = format_full_recipe(item, create_new_link=False)
+                                keyboard = create_recipe_keyboard(url)
                                 photo = get_photo_url(item)
                                 if photo:
-                                    send_photo(chat_id, photo, text, keyboard)
+                                    send_photo(chat_id, photo, txt, keyboard)
                                 else:
-                                    send_message(chat_id, text, keyboard)
+                                    send_message(chat_id, txt, keyboard)
                             else:
                                 send_message(chat_id, "📭 Лента пока пуста", create_menu_keyboard())
                         elif text == "/help":
-                            send_message(chat_id, "🍳 <b>Команды</b>\n\n/feed - Лента рецептов\n/random - Случайный рецепт\n/start - Главное меню", create_menu_keyboard())
+                            send_message(chat_id, "🍳 <b>Команды</b>\n\n/feed - Лента\n/random - Случайный рецепт\n/start - Главное меню", create_menu_keyboard())
                         else:
-                            # Неизвестная команда — просто игнорируем в личке, в группе тоже молчим
                             continue
             
         except Exception as e:
