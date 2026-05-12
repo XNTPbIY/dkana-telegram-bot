@@ -284,8 +284,8 @@ if __name__ == "__main__":
                         text = message.get("text", "")
                         chat_type = message.get("chat", {}).get("type", "")
                         
-                        # === ИГНОРИРУЕМ СООБЩЕНИЯ ИЗ КАНАЛОВ И ГРУПП ===
-                        if chat_type in ["channel", "group", "supergroup"]:
+                        # Игнорируем только каналы (в группах и личке работаем)
+                        if chat_type == "channel":
                             continue
                         
                         if text == "/start":
@@ -296,7 +296,7 @@ if __name__ == "__main__":
                             if feed_cache:
                                 send_message(chat_id, f"📖 <b>Лента рецептов</b> (всего {len(feed_cache)})", create_list_keyboard(feed_cache, 1))
                             else:
-                                send_message(chat_id, "📭 Лента пока пуста", create_menu_keyboard())
+                                send_message(chat_id, "📭 Лента пока пуста\n\nОпубликуйте свой первый рецепт!", create_menu_keyboard())
                         elif text == "/random":
                             item = get_random_from_feed()
                             if item:
@@ -312,7 +312,7 @@ if __name__ == "__main__":
                         elif text == "/help":
                             send_message(chat_id, "🍳 <b>Команды</b>\n\n/feed - Лента рецептов\n/random - Случайный рецепт\n/start - Главное меню", create_menu_keyboard())
                         else:
-                            # Неизвестная команда — просто игнорируем, НЕ ОТВЕЧАЕМ
+                            # Неизвестная команда — просто игнорируем в личке, в группе тоже молчим
                             continue
             
         except Exception as e:
